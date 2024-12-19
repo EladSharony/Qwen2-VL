@@ -100,7 +100,7 @@ if __name__ == "__main__":
         import ogbench
 
         print(f"Downloading dataset: {dataset_name} to: {dataset_dir}")
-        ogbench.download_datasets(dataset_name, dataset_dir=dataset_dir)
+        ogbench.download_datasets([dataset_name], dataset_dir=dataset_dir)
 
         dataset_path = os.path.join(dataset_dir, f"{dataset_name}")
 
