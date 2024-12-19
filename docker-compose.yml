@@ -1,6 +1,8 @@
 services:
   qwen2:
-    image: qwenllm/qwenvl:2-cu121
+    build:
+      context: .
+      dockerfile: Dockerfile
     container_name: qwen2
     network_mode: host
     ipc: host
