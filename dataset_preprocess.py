@@ -158,7 +158,6 @@ def generate_new_dataset(dataset_name='visual-cube-single-play-v0',
     """
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    dataset_dir = os.path.expanduser(dataset_dir)
     splits = dataset_name.split('-')
     env_name = '-'.join(splits[:-2] + splits[-1:])
     if dataset == 'train':
@@ -265,7 +264,7 @@ if __name__ == "__main__":
                 "max_transitions": 50_000,
                 "dataset": "train"}
 
-    dataset_dir = os.path.expanduser(cfg_dict['dataset_dir'])
+    dataset_dir = cfg_dict['dataset_dir']
     splits = cfg_dict['dataset_name'].split('-')
     env_name = '-'.join(splits[:-2] + splits[-1:])
     if cfg_dict['dataset'] == 'train':

@@ -91,9 +91,11 @@ def extract_next_observations(dataset_path):
 
 
 if __name__ == "__main__":
-    dataset_dir = os.path.expanduser('/.ogbench/data')
+    dataset_dir = '/.ogbench/data'
     dataset_name = 'visual-cube-single-play-v0'
 
+    if not os.path.exists(dataset_dir):
+        os.makedirs(dataset_dir)
     if dataset_name not in os.listdir(dataset_dir):
         import ogbench
 
