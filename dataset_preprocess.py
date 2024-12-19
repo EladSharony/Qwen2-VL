@@ -13,11 +13,23 @@ from sentence_transformers import SentenceTransformer
 
 from numpy.lib.format import open_memmap
 
-
 from sklearn.cluster import AgglomerativeClustering
 from sklearn.metrics.pairwise import cosine_similarity
 from sklearn.manifold import TSNE
 import matplotlib.pyplot as plt
+
+import argparse
+from pathlib import Path
+
+# Default values
+DEFAULT_DATASET_NAME = 'visual-cube-single-play-v0'
+DEFAULT_DATASET_DIR = Path('/.ogbench/data')
+DEFAULT_DATASET_SPLIT = 'train'
+DEFAULT_VL_MODEL_NAME = "Qwen/Qwen2-VL-7B-Instruct-AWQ"
+DEFAULT_ST_MODEL_NAME = "all-MiniLM-L6-v2"
+DEFAULT_BATCH_SIZE = 1
+DEFAULT_MAX_TRANSITIONS = 1000
+
 
 
 def visualize_clusters(dataset_path):
@@ -75,16 +87,9 @@ def load_dataset(dataset_path, mode='r'):
     """
     Load OGBench dataset with appropriate memory-mapping based on data types.
     """
-    dtype_map = {
-        'observations': np.float32,
-        'next_observations': np.float32,
-        'actions': np.float32,
-        'terminals': np.float32,
-        'qpos': np.float32,
-        'qvel': np.float32,
-        'text_descriptions': 'U512',           # Unicode strings
-        'description_embeddings': np.float32,
-    }
+    dtype_map = {'observations': np.float32, 'next_observations': np.float32, 'actions': np.float32, 'terminals': np.float32, 'qpos': np.float32, 'qvel': np.float32, 'text_descriptions': 'U512',
+        # Unicode strings
+        'description_embeddings': np.float32, }
 
     dataset = {}
     for key, dtype in dtype_map.items():
@@ -119,7 +124,9 @@ def create_new_dataset(N, mock_batch, dataset_path):
         os.makedirs(new_dataset_path)
     dataset = {}
     for key in mock_batch.keys():
-        dataset[key] = open_memmap(f'{new_dataset_path}/{key}.npy', mode='w+', shape=(N,) + mock_batch[key].shape[1:], dtype=mock_batch[key].dtype)
+        dataset[key] = open_memmap(f'{new_dataset_path}/{key}.npy', mode='w+', shape=(N,) + mock_batch[key].shape[
+                                                                                            1:], dtype=mock_batch[
+            key].dtype)
     return dataset
 
 
@@ -150,9 +157,12 @@ def create_diff_image(frame1, frame2):
 
 def generate_new_dataset(dataset_name='visual-cube-single-play-v0',
                          dataset_dir='/.ogbench/data',
+                         dataset='train',
+                         vl_model_name="Qwen/Qwen2-VL-7B-Instruct-AWQ",
+                         st_model_name="all-MiniLM-L6-v2",
                          batch_size=1,
                          max_transitions=1000,
-                         dataset='train'):
+                         ):
     """
     Preprocess the visual-cube-single-play-v0 dataset with textual descriptions
     """
@@ -173,14 +183,14 @@ def generate_new_dataset(dataset_name='visual-cube-single-play-v0',
     N = min(max_transitions, dataset['observations'].shape[0])
 
     # 2. Load Qwen2-VL model
-    model_name = "Qwen/Qwen2-VL-7B-Instruct-AWQ"
+    model_name = vl_model_name
     model = Qwen2VLForConditionalGeneration.from_pretrained(model_name, torch_dtype=torch.float16, device_map="auto")
     min_pixels = 256 * 28 * 28
     max_pixels = 1280 * 28 * 28
     processor = AutoProcessor.from_pretrained(model_name, min_pixels=min_pixels, max_pixels=max_pixels)
 
     # 3. Load SentenceTransformer model
-    st_model = SentenceTransformer('all-MiniLM-L6-v2')
+    st_model = SentenceTransformer(st_model_name)
     embedding_dim = st_model.get_sentence_embedding_dimension()
 
     mock_batch = get_batch(dataset, 0, batch_size, embedding_dim)
@@ -257,12 +267,66 @@ def generate_new_dataset(dataset_name='visual-cube-single-play-v0',
             pbar.update(end_idx - start_idx)
 
 
+def get_parser() -> argparse.ArgumentParser:
+    """
+    Creates and returns an argument parser for the dataset preprocessing script.
+
+    Returns:
+        argparse.ArgumentParser: Configured argument parser.
+    """
+
+    parser = argparse.ArgumentParser(description="Preprocess dataset for cube environment.")
+    parser.add_argument(
+        '--dataset_name',
+        type=str,
+        default=DEFAULT_DATASET_NAME,
+        help='Name of the dataset to preprocess.'
+    )
+    parser.add_argument(
+        '--dataset_dir',
+        type=Path,
+        default=DEFAULT_DATASET_DIR,
+        help='Directory to save the dataset.'
+    )
+    parser.add_argument(
+        '--dataset',
+        type=str,
+        choices=['train', 'val'],
+        default=DEFAULT_DATASET_SPLIT,
+        help='Dataset split to preprocess ("train" or "val").'
+    )
+    parser.add_argument(
+        '--vl_model_name',
+        type=str,
+        default=DEFAULT_VL_MODEL_NAME,
+        help='Name of the Qwen2-VL model to use.'
+    )
+    parser.add_argument(
+        '--st_model_name',
+        type=str,
+        default=DEFAULT_ST_MODEL_NAME,
+        help='Name of the SentenceTransformer model to use.'
+    )
+    parser.add_argument(
+        '--batch_size',
+        type=int,
+        default=DEFAULT_BATCH_SIZE,
+        help='Batch size for generating descriptions.'
+    )
+    parser.add_argument(
+        '--max_transitions',
+        type=int,
+        default=DEFAULT_MAX_TRANSITIONS,
+        help='Maximum number of transitions to preprocess.'
+    )
+
+    return parser
+
+
 if __name__ == "__main__":
-    cfg_dict = {"dataset_name": "visual-cube-single-play-v0",
-                "dataset_dir": "/.ogbench/data",
-                "batch_size": 2,
-                "max_transitions": 50_000,
-                "dataset": "train"}
+    parser = get_parser()
+    args = parser.parse_args()
+    cfg_dict = vars(args)
 
     dataset_dir = cfg_dict['dataset_dir']
     splits = cfg_dict['dataset_name'].split('-')
@@ -274,5 +338,4 @@ if __name__ == "__main__":
 
     generate_new_dataset(**cfg_dict)
 
-    # Visualize clusters
-    # visualize_clusters(dataset_path + '-enriched')
+    # Visualize clusters  # visualize_clusters(dataset_path + '-enriched')
