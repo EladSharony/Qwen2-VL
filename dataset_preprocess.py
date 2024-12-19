@@ -149,7 +149,7 @@ def create_diff_image(frame1, frame2):
 
 
 def generate_new_dataset(dataset_name='visual-cube-single-play-v0',
-                         dataset_dir='~/.ogbench/data',
+                         dataset_dir='/.ogbench/data',
                          batch_size=1,
                          max_transitions=1000,
                          dataset='train'):
@@ -260,7 +260,7 @@ def generate_new_dataset(dataset_name='visual-cube-single-play-v0',
 
 if __name__ == "__main__":
     cfg_dict = {"dataset_name": "visual-cube-single-play-v0",
-                "dataset_dir": "~/.ogbench/data",
+                "dataset_dir": "/.ogbench/data",
                 "batch_size": 2,
                 "max_transitions": 50_000,
                 "dataset": "train"}
