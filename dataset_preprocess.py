@@ -23,7 +23,7 @@ from pathlib import Path
 
 # Default values
 DEFAULT_DATASET_NAME = 'visual-cube-single-play-v0'
-DEFAULT_DATASET_DIR = Path('/.ogbench/data')
+DEFAULT_DATASET_DIR = Path('~/.ogbench/data')
 DEFAULT_DATASET_SPLIT = 'train'
 DEFAULT_VL_MODEL_NAME = "Qwen/Qwen2-VL-7B-Instruct-AWQ"
 DEFAULT_ST_MODEL_NAME = "all-MiniLM-L6-v2"
@@ -31,11 +31,12 @@ DEFAULT_BATCH_SIZE = 1
 DEFAULT_MAX_TRANSITIONS = 1000
 
 
-
-def visualize_clusters(dataset_path):
+def visualize_clusters(dataset_path, batch_size=5000):
     dataset = load_dataset(dataset_path, mode='r')
-    text_descriptions = dataset['text_descriptions']
-    text_embeddings = dataset['description_embeddings']
+    indices = np.random.choice(len(dataset[list(dataset.keys())[0]]), batch_size, replace=False)
+
+    text_descriptions = dataset['text_descriptions'][indices]
+    text_embeddings = dataset['description_embeddings'][indices]
 
     # Normalize embeddings for cosine similarity
     text_embeddings = text_embeddings / np.linalg.norm(text_embeddings, axis=1, keepdims=True)
@@ -87,16 +88,21 @@ def load_dataset(dataset_path, mode='r'):
     """
     Load OGBench dataset with appropriate memory-mapping based on data types.
     """
-    dtype_map = {'observations': np.float32, 'next_observations': np.float32, 'actions': np.float32, 'terminals': np.float32, 'qpos': np.float32, 'qvel': np.float32, 'text_descriptions': 'U512',
-        # Unicode strings
-        'description_embeddings': np.float32, }
+    dtype_map = {'observations': np.float32,
+                 'next_observations': np.float32,
+                 'actions': np.float32,
+                 'terminals': np.float32,
+                 'qpos': np.float32,
+                 'qvel': np.float32,
+                 'text_descriptions': 'U512',
+                 'description_embeddings': np.float32,
+                 }
 
     dataset = {}
     for key, dtype in dtype_map.items():
-        file_path = os.path.join(dataset_path, f'{key}.npy')
-        if not os.path.exists(file_path):
-            continue
         try:
+            file_path = os.path.join(dataset_path, f'{key}.npy')
+            file_path = os.path.expanduser(file_path)
             dataset[key] = open_memmap(file_path, mode=mode, dtype=dtype)
         except Exception as e:
             print(f"Failed to load {key}.npy: {e}")
@@ -251,7 +257,8 @@ def generate_new_dataset(dataset_name='visual-cube-single-play-v0',
             # Generate text
             generated_ids = model.generate(**inputs, max_new_tokens=256)
             trimmed_ids = [out_ids[len(in_ids):] for in_ids, out_ids in zip(inputs.input_ids, generated_ids)]
-            batch_texts = processor.batch_decode(trimmed_ids, skip_special_tokens=True, clean_up_tokenization_spaces=True)
+            batch_texts = processor.batch_decode(trimmed_ids, skip_special_tokens=True,
+                                                 clean_up_tokenization_spaces=True)
 
             # Encode with SentenceTransformer
             text_embeddings_encoded = st_model.encode(batch_texts)
@@ -336,6 +343,7 @@ if __name__ == "__main__":
     elif cfg_dict['dataset'] == 'val':
         dataset_path = os.path.join(dataset_dir, f"{cfg_dict['dataset_name']}-val")
 
-    generate_new_dataset(**cfg_dict)
+    # generate_new_dataset(**cfg_dict)
 
-    # Visualize clusters  # visualize_clusters(dataset_path + '-enriched')
+    # Visualize clusters
+    visualize_clusters(dataset_path + '-enriched', batch_size=5_000)
