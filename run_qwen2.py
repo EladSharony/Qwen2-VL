@@ -8,9 +8,6 @@ from tqdm import tqdm
 from transformers import Qwen2VLForConditionalGeneration, AutoProcessor
 from qwen_vl_utils import process_vision_info
 
-# Sentence Transformer
-from sentence_transformers import SentenceTransformer
-
 from numpy.lib.format import open_memmap
 
 from sklearn.cluster import AgglomerativeClustering
@@ -26,16 +23,15 @@ DEFAULT_DATASET_NAME = 'visual-cube-single-play-v0'
 DEFAULT_DATASET_DIR = Path('~/.ogbench/data')
 DEFAULT_DATASET_SPLIT = 'train'
 DEFAULT_VL_MODEL_NAME = "Qwen/Qwen2-VL-7B-Instruct-AWQ"
-DEFAULT_ST_MODEL_NAME = "all-MiniLM-L6-v2"
 DEFAULT_BATCH_SIZE = 1
-DEFAULT_MAX_TRANSITIONS = 1000
+DEFAULT_MAX_TRANSITIONS = 10
 
 
 def visualize_clusters(dataset_path, batch_size=5000):
     dataset = load_dataset(dataset_path, mode='r')
     indices = np.random.choice(len(dataset[list(dataset.keys())[0]]), batch_size, replace=False)
 
-    text_descriptions = dataset['text_descriptions'][indices]
+    text_descriptions = dataset['descriptions'][indices]
     text_embeddings = dataset['description_embeddings'][indices]
 
     # Normalize embeddings for cosine similarity
@@ -94,8 +90,7 @@ def load_dataset(dataset_path, mode='r'):
                  'terminals': np.float32,
                  'qpos': np.float32,
                  'qvel': np.float32,
-                 'text_descriptions': 'U512',
-                 'description_embeddings': np.float32,
+                 'descriptions': 'U512',
                  }
 
     dataset = {}
@@ -106,26 +101,24 @@ def load_dataset(dataset_path, mode='r'):
             dataset[key] = open_memmap(file_path, mode=mode, dtype=dtype)
         except Exception as e:
             print(f"Failed to load {key}.npy: {e}")
-            raise e
     return dataset
 
 
-def get_batch(dataset, start_idx, end_idx, embedding_dim):
+def get_batch(dataset, start_idx, end_idx):
     batch = {}
     for key in dataset.keys():
         # For keys that are 2D (like observations) or 1D (like terminals), slice them.
         batch[key] = np.array(dataset[key][start_idx:end_idx])
 
     # Initialize placeholders for text info
-    batch['text_descriptions'] = np.empty(end_idx - start_idx, dtype='U512')
-    batch['text_descriptions'][:] = ""
-    batch['description_embeddings'] = np.zeros((end_idx - start_idx, embedding_dim), dtype=np.float32)
-
+    batch['descriptions'] = np.empty(end_idx - start_idx, dtype='U512')
+    batch['descriptions'][:] = ""
     return batch
 
 
 def create_new_dataset(N, mock_batch, dataset_path):
     new_dataset_path = dataset_path + '-enriched'
+    new_dataset_path = os.path.expanduser(new_dataset_path)
     if not os.path.exists(new_dataset_path):
         os.makedirs(new_dataset_path)
     dataset = {}
@@ -165,7 +158,6 @@ def generate_new_dataset(dataset_name='visual-cube-single-play-v0',
                          dataset_dir='/.ogbench/data',
                          dataset='train',
                          vl_model_name="Qwen/Qwen2-VL-7B-Instruct-AWQ",
-                         st_model_name="all-MiniLM-L6-v2",
                          batch_size=1,
                          max_transitions=1000,
                          ):
@@ -195,18 +187,14 @@ def generate_new_dataset(dataset_name='visual-cube-single-play-v0',
     max_pixels = 1280 * 28 * 28
     processor = AutoProcessor.from_pretrained(model_name, min_pixels=min_pixels, max_pixels=max_pixels)
 
-    # 3. Load SentenceTransformer model
-    st_model = SentenceTransformer(st_model_name)
-    embedding_dim = st_model.get_sentence_embedding_dimension()
-
-    mock_batch = get_batch(dataset, 0, batch_size, embedding_dim)
+    mock_batch = get_batch(dataset, 0, batch_size)
     new_dataset = create_new_dataset(N, mock_batch, dataset_path)
 
     # 4. Generate textual descriptions
     with tqdm(total=N, desc="Generating descriptions", unit="transitions") as pbar:
         for start_idx in range(0, N, batch_size):
             end_idx = min(start_idx + batch_size, N)
-            batch = get_batch(dataset, start_idx, end_idx, embedding_dim)
+            batch = get_batch(dataset, start_idx, end_idx)
 
             messages_list = []
             for i in range(end_idx - start_idx):
@@ -257,14 +245,9 @@ def generate_new_dataset(dataset_name='visual-cube-single-play-v0',
             # Generate text
             generated_ids = model.generate(**inputs, max_new_tokens=256)
             trimmed_ids = [out_ids[len(in_ids):] for in_ids, out_ids in zip(inputs.input_ids, generated_ids)]
-            batch_texts = processor.batch_decode(trimmed_ids, skip_special_tokens=True,
-                                                 clean_up_tokenization_spaces=True)
+            batch_descriptions = processor.batch_decode(trimmed_ids, skip_special_tokens=True, clean_up_tokenization_spaces=True)
 
-            # Encode with SentenceTransformer
-            text_embeddings_encoded = st_model.encode(batch_texts)
-
-            batch['text_descriptions'] = batch_texts
-            batch['description_embeddings'] = text_embeddings_encoded
+            batch['descriptions'] = batch_descriptions
 
             # Save to new dataset
             for key in new_dataset.keys():
@@ -309,12 +292,6 @@ def get_parser() -> argparse.ArgumentParser:
         help='Name of the Qwen2-VL model to use.'
     )
     parser.add_argument(
-        '--st_model_name',
-        type=str,
-        default=DEFAULT_ST_MODEL_NAME,
-        help='Name of the SentenceTransformer model to use.'
-    )
-    parser.add_argument(
         '--batch_size',
         type=int,
         default=DEFAULT_BATCH_SIZE,
@@ -343,7 +320,12 @@ if __name__ == "__main__":
     elif cfg_dict['dataset'] == 'val':
         dataset_path = os.path.join(dataset_dir, f"{cfg_dict['dataset_name']}-val")
 
-    # generate_new_dataset(**cfg_dict)
+    generate_new_dataset(**cfg_dict)
 
     # Visualize clusters
-    visualize_clusters(dataset_path + '-enriched', batch_size=5_000)
+    # visualize_clusters(dataset_path + '-enriched', batch_size=5_000)
+
+
+    # load enriched dataset
+    # dataset = load_dataset(dataset_path + '-enriched', mode='r')
+    # print(dataset.keys())

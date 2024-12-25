@@ -1,4 +1,6 @@
 import os
+from pathlib import Path
+
 import numpy as np
 from numpy.lib.format import open_memmap
 
@@ -8,14 +10,11 @@ def load_dataset(dataset_path, mode='r'):
     Load OGBench dataset with appropriate memory-mapping based on data types.
     """
     dtype_map = {
-        'observations': np.float32,
-        'next_observations': np.float32,
+        'observations': np.float32, 'qpos': np.float32, 'qvel': np.float32,
+        'next_observations': np.float32, 'next_qpos': np.float32, 'next_qvel': np.float32,
         'actions': np.float32,
         'terminals': np.float32,
-        'qpos': np.float32,
-        'qvel': np.float32,
-        'text_descriptions': 'U512',           # Unicode strings
-        'description_embeddings': np.float32,
+        'descriptions': 'U512', # Unicode strings
     }
 
     dataset = {}
@@ -69,34 +68,34 @@ def unzip_npz(npz_path, output_dir=None):
 
 def extract_next_observations(dataset_path):
     """Preprocess entire dataset once to create next_observations, etc."""
-    print("Extracting next observations...")
 
     dataset = load_dataset(dataset_path, mode='r')
 
     ob_mask = (1.0 - dataset['terminals']).astype(bool)
     next_ob_mask = np.concatenate([[False], ob_mask[:-1]])
-    dataset['next_observations'] = dataset['observations'][next_ob_mask]
-    dataset['observations'] = dataset['observations'][ob_mask]
-    dataset['actions'] = dataset['actions'][ob_mask]
 
+    for key in ['observations', 'qpos', 'qvel']:
+        print(f"Extracting next_{key}...")
+        np.save(dataset_path + f'/next_{key}.npy', dataset[key][next_ob_mask])
+        np.save(dataset_path + f'/{key}.npy', dataset[key][ob_mask])
+
+    dataset['actions'] = dataset['actions'][ob_mask]
     new_terminals = np.concatenate([dataset['terminals'][1:], [1.0]])
     dataset['terminals'] = new_terminals[ob_mask].astype(np.float32)
 
-    dataset['qpos'] = dataset['qpos'][ob_mask]
-    dataset['qvel'] = dataset['qvel'][ob_mask]
-
-    # Save the updated dataset
-    for key in dataset.keys():
+    for key in ['actions', 'terminals']:
         np.save(dataset_path + f'/{key}.npy', dataset[key])
 
 
 if __name__ == "__main__":
-    dataset_dir = '/.ogbench/data'
+    dataset_dir = Path('~/.ogbench/data')
+    dataset_dir = dataset_dir.expanduser()
     dataset_name = 'visual-cube-single-play-v0'
 
     if not os.path.exists(dataset_dir):
         os.makedirs(dataset_dir)
-    if dataset_name not in os.listdir(dataset_dir):
+    if (dataset_name not in os.listdir(dataset_dir) or
+            'next_observations.npy' not in os.listdir(os.path.join(dataset_dir, dataset_name))):
         import ogbench
 
         print(f"Downloading dataset: {dataset_name} to: {dataset_dir}")
