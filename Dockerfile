@@ -6,11 +6,11 @@ RUN pip install --no-cache-dir ogbench \
     autoawq==0.2.7  \
     transformers==4.46.3
 
-COPY ogbench_dataset.py /app/ogbench_dataset.py
-COPY dataset_preprocess.py /app/dataset_preprocess.py
+COPY setup_ogbench.py /workspace/setup_ogbench.py
+COPY run_qwen2.py /workspace/run_qwen2.py
 
 # Set the working directory
-WORKDIR /app
+WORKDIR /workspace
 
 # Run the command
 CMD ["python", "ogbench_dataset.py"]
